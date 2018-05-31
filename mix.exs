@@ -24,7 +24,7 @@ defmodule Memcache.Mixfile do
       {:ex_doc, "~> 0.11.4", only: :dev},
       {:poison, "~> 2.2.0"},
       {:poolboy, "~> 1.5.1"},
-      {:connection, "~> 1.0.2"}
+      {:connection, "~> 1.0.4"}
     ]
   end
 
