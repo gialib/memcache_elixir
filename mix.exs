@@ -4,7 +4,7 @@ defmodule Memcache.Mixfile do
   def project do
     [
       app: :memcache,
-      version: "0.1.0",
+      version: "0.1.1",
       elixir: "~> 1.0",
       description: description(),
       package: package(),
@@ -20,10 +20,10 @@ defmodule Memcache.Mixfile do
 
   defp deps do
     [
-      {:earmark, "~> 0.2.0", only: :dev},
-      {:ex_doc, "~> 0.11.4", only: :dev},
-      {:poison, "~> 2.2.0"},
+      {:earmark, "~> 1.2.5", only: :dev},
+      {:ex_doc, "~> 0.18.3", only: :dev},
       {:poolboy, "~> 1.5.1"},
+      {:jason, "~> 1.0"},
       {:connection, "~> 1.0.4"}
     ]
   end

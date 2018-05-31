@@ -55,7 +55,7 @@ defmodule Memcache.Transcoder.Json do
   def encode_value(value) do
     opts = Application.get_env(:memcache, :transcoder_encode_opts, [])
 
-    case Poison.encode(value, opts) do
+    case Jason.encode(value, opts) do
       {:ok, data} ->
         {data, @json_type_flag}
 
@@ -66,7 +66,7 @@ defmodule Memcache.Transcoder.Json do
 
   def decode_value(value, @json_type_flag) do
     opts = Application.get_env(:memcache, :transcoder_decode_opts, [])
-    {:ok, value} = Poison.decode(value, opts)
+    {:ok, value} = Jason.decode(value, opts)
     value
   end
 
