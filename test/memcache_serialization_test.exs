@@ -1,4 +1,4 @@
-defmodule MemcacheTest.Serialization do
+defmodule Memcache.SerializationTest do
   use ExUnit.Case
 
   alias Memcache.Serialization

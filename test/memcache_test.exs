@@ -8,6 +8,36 @@ defmodule MemcacheTest do
     :ok
   end
 
+  test "expires" do
+    set_response = Memcache.set("hello", "world", expires: 3)
+
+    assert set_response.status == :ok
+    assert Memcache.get!("hello") == "world"
+
+    Process.sleep(1000)
+    assert Memcache.get!("hello") == "world"
+
+    Process.sleep(1000)
+    assert Memcache.get!("hello") == "world"
+
+    Process.sleep(1000)
+    assert Memcache.get!("hello") == nil
+  end
+
+  test "fetch!" do
+    value = Memcache.fetch!("hello", fn ->
+      "world"
+    end)
+
+    assert value == "world"
+
+    value = Memcache.fetch!("hello", fn ->
+      "world2"
+    end)
+
+    assert value == "world"
+  end
+
   test "get key not found" do
     get_response = Memcache.get("key")
     assert get_response.status == :key_not_found
@@ -126,34 +156,6 @@ defmodule MemcacheTest do
 
     get_response = Memcache.get("key")
     assert get_response.status == :key_not_found
-  end
-
-  test "append" do
-    append_response = Memcache.append("key", "value")
-    assert append_response.status == :item_not_stored
-
-    set_response = Memcache.set("key", "value")
-    assert set_response.status == :ok
-
-    append_response = Memcache.append("key", " value")
-    assert append_response.status == :ok
-
-    get_response = Memcache.get("key")
-    assert get_response.value == "value value"
-  end
-
-  test "prepend" do
-    prepend_response = Memcache.prepend("key", "value")
-    assert prepend_response.status == :item_not_stored
-
-    set_response = Memcache.set("key", "value")
-    assert set_response.status == :ok
-
-    prepend_response = Memcache.prepend("key", "value ")
-    assert prepend_response.status == :ok
-
-    get_response = Memcache.get("key")
-    assert get_response.value == "value value"
   end
 
   test "multi get" do

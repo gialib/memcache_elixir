@@ -113,7 +113,7 @@ defmodule Memcache.Worker do
     case :gen_tcp.send(socket, bytes) do
       :ok ->
         # start receiving if non quiet operation
-        unless Opcode.quiet?(header.opcode), do: do_receive(socket, from, timeout)
+        unless Opcode.quiet?(header.opcode), do: _receive(socket, from, timeout)
         {:noreply, %{state | from: from}}
 
       {:error, reason} ->
@@ -134,14 +134,14 @@ defmodule Memcache.Worker do
       :ok ->
         String.split(body, " ")
         |> hd
-        |> do_sasl_auth(username, password, socket, timeout)
+        |> _sasl_auth(username, password, socket, timeout)
 
       reason ->
         reason
     end
   end
 
-  defp do_sasl_auth("PLAIN", username, password, socket, timeout) do
+  defp _sasl_auth("PLAIN", username, password, socket, timeout) do
     bytes =
       Serialization.encode_request(
         %Header{opcode: :sasl_authenticate},
@@ -154,9 +154,9 @@ defmodule Memcache.Worker do
     header.status
   end
 
-  defp do_sasl_auth(_, _, _, _, _), do: {:error, :unknown_sasl_auth_mechanism}
+  defp _sasl_auth(_, _, _, _, _), do: {:error, :unknown_sasl_auth_mechanism}
 
-  defp do_receive(socket, nil, timeout) do
+  defp _receive(socket, nil, timeout) do
     case receive_header(socket, timeout) do
       {:ok, header} ->
         case receive_body(socket, header.total_body_length, timeout) do
@@ -178,11 +178,11 @@ defmodule Memcache.Worker do
     end
   end
 
-  defp do_receive(socket, reply_to, timeout) do
-    case do_receive(socket, nil, timeout) do
+  defp _receive(socket, reply_to, timeout) do
+    case _receive(socket, nil, timeout) do
       {:ok, header, _key, _body, _extras} = response ->
         Kernel.send(reply_to, {:response, response})
-        if Opcode.quiet?(header.opcode), do: do_receive(socket, reply_to, timeout)
+        if Opcode.quiet?(header.opcode), do: _receive(socket, reply_to, timeout)
 
       {:error, _reason} = error ->
         Kernel.send(reply_to, {:response, error})
@@ -207,6 +207,6 @@ defmodule Memcache.Worker do
 
   defp send_and_receive(socket, bytes, timeout) do
     :ok = :gen_tcp.send(socket, bytes)
-    do_receive(socket, nil, timeout)
+    _receive(socket, nil, timeout)
   end
 end

@@ -1,4 +1,4 @@
-defmodule MemcacheTest.Transcoder do
+defmodule Memcache.TranscoderTest do
   use ExUnit.Case
 
   test "raw transcoder encode_value" do

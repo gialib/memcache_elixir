@@ -17,6 +17,7 @@ defmodule Memcache do
   @default_password ""
   @default_timeout 5000
   @default_socket_opts [:binary, {:nodelay, true}, {:active, false}, {:packet, :raw}]
+  @default_type :json
 
   @type key :: binary
   @type value :: any
@@ -80,77 +81,93 @@ defmodule Memcache do
   @doc """
   Gets `value` for given `key`.
   """
-  @spec get(key) :: Response.t()
-  def get(key) do
+  @spec get(key, opts) :: Response.t()
+  def get(key, opts \\ []) do
     request = %Request{opcode: :get, key: key}
-    [response] = multi_request([request], false)
+    [response] = multi_request([request], false, opts)
 
-    response
+    response |> _decode_response(opts)
   end
+
+  def get!(key, opts \\ []) do
+    case get(key, opts) do
+      %Memcache.Response{status: :ok, value: value} -> value
+      _ -> nil
+    end
+  end
+
+  defp _decode_response(%Memcache.Response{status: :ok} = response, opts) do
+    transcoder = opts |> Keyword.get(:type, @default_type) |> _get_transcoder()
+    value = if response.value, do: transcoder.decode_value(response.value)
+    response |> Map.put(:value, value)
+  end
+
+  defp _decode_response(response, _opts), do: response
 
   @doc """
   Gets values for multiple `keys` with a single pipelined operation.
   """
-  @spec mget(Enumerable.t()) :: Stream.t()
-  def mget(keys) do
-    requests = Enum.map(keys, &%Request{opcode: :getk, key: &1})
-    multi_request(requests)
+  @spec mget(Enumerable.t(), opts) :: Stream.t()
+  def mget(keys, opts \\ []) do
+    keys
+    |> Enum.map(&%Request{opcode: :getk, key: &1})
+    |> multi_request(true, opts)
+    |> Enum.map(fn response ->
+      _decode_response(response, opts)
+    end)
   end
 
   @doc """
   Sets `value` for given `key`.
   """
   @spec set(key, value, opts) :: Response.t()
-  def set(key, value, opts \\ []), do: do_store(:set, key, value, opts)
+  def set(key, value, opts \\ []), do: _store(:set, key, value, opts)
+
+  def fetch(key, missing_fn, opts \\ []) when is_binary(key) and is_function(missing_fn) do
+    response = get(key, opts)
+
+    case response.status do
+      :key_not_found ->
+        set(key, missing_fn.(), opts)
+
+      _ ->
+        response
+    end
+  end
+
+  def fetch!(key, missing_fn, opts \\ []) do
+    case fetch(key, missing_fn, opts) do
+      %Memcache.Response{status: :ok, value: value} -> value
+      _ -> nil
+    end
+  end
 
   @doc """
   Sets multiple `values` with a single pipelined operation. Value
   needs to be a tuple of `key` and `value`.
   """
-  @spec mset(Enumerable.t()) :: Stream.t()
-  def mset(keyvalues) do
+  @spec mset(Enumerable.t(), opts) :: Stream.t()
+  def mset(keyvalues, opts \\ []) do
     requests =
       keyvalues
       |> Enum.map(fn {key, value} ->
-        store_request(:set, key, value, [])
+        _store_request(:set, key, value, [])
       end)
 
-    multi_request(requests)
+    multi_request(requests, true, opts)
   end
 
   @doc """
   Sets `value` for given `key` only if it does not already exist.
   """
   @spec add(key, value, opts) :: Response.t()
-  def add(key, value, opts \\ []), do: do_store(:add, key, value, opts)
+  def add(key, value, opts \\ []), do: _store(:add, key, value, opts)
 
   @doc """
   Sets `value`for given `key` only if it already exists.
   """
   @spec replace(key, value, opts) :: Response.t()
-  def replace(key, value, opts \\ []), do: do_store(:replace, key, value, opts)
-
-  @doc """
-  Appends `value` to given `key` if it already exists.
-  """
-  @spec append(key, value) :: Response.t()
-  def append(key, value) do
-    request = %Request{opcode: :append, key: key, value: value}
-    [response] = multi_request([request], false)
-
-    response
-  end
-
-  @doc """
-  Prepends `value` to given `key` if it already exists.
-  """
-  @spec prepend(key, value) :: Response.t()
-  def prepend(key, value) do
-    request = %Request{opcode: :prepend, key: key, value: value}
-    [response] = multi_request([request], false)
-
-    response
-  end
+  def replace(key, value, opts \\ []), do: _store(:replace, key, value, opts)
 
   @doc """
   Deletes the `value` for the given `key`.
@@ -167,13 +184,13 @@ defmodule Memcache do
   Increments a counter on given `key`.
   """
   @spec increment(key, pos_integer, opts) :: Response.t()
-  def increment(key, amount, opts \\ []), do: do_incr_decr(:increment, key, amount, opts)
+  def increment(key, amount, opts \\ []), do: _incr_decr(:increment, key, amount, opts)
 
   @doc """
   Decrements a counter on given `key`.
   """
   @spec decrement(key, pos_integer, opts) :: Response.t()
-  def decrement(key, amount, opts \\ []), do: do_incr_decr(:decrement, key, amount, opts)
+  def decrement(key, amount, opts \\ []), do: _incr_decr(:decrement, key, amount, opts)
 
   @doc """
   Flushes the cache.
@@ -181,11 +198,10 @@ defmodule Memcache do
   @spec flush(opts) :: Response.t()
   def flush(opts \\ []) do
     expires = Keyword.get(opts, :expires, 0)
-
     extras = <<expires::size(32)>>
 
     request = %Request{opcode: :flush, extras: extras}
-    [response] = multi_request([request], false)
+    [response] = multi_request([request], false, opts)
 
     response
   end
@@ -197,18 +213,17 @@ defmodule Memcache do
   def version() do
     request = %Request{opcode: :version}
     [response] = multi_request([request], false)
-
     response
   end
 
   ## private api
 
-  defp multi_request(requests, return_stream \\ true) do
+  defp multi_request(requests, return_stream, _opts \\ []) do
     stream =
       Stream.resource(
         fn ->
           worker = :poolboy.checkout(Memcache.Pool)
-          :ok = do_multi_request(requests, worker)
+          :ok = _multi_request(requests, worker)
           {worker, :cont}
         end,
         fn
@@ -216,7 +231,6 @@ defmodule Memcache do
             # stream responses
             receive do
               {:response, {:ok, header, key, value, extras}} ->
-                # apply transcoder for get operations
                 if extras != "" and Opcode.get?(header.opcode) do
                   <<type_flag::size(32)>> = extras
 
@@ -242,18 +256,7 @@ defmodule Memcache do
                   end
                 end
 
-                unless Opcode.quiet?(header.opcode) do
-                  # we'll halt since there won't be anymore results
-                  {[
-                     %Response{
-                       status: header.status,
-                       cas: header.cas,
-                       key: key,
-                       value: value,
-                       extras: extras
-                     }
-                   ], {worker, :halt}}
-                else
+                if Opcode.quiet?(header.opcode) do
                   {[
                      %Response{
                        status: header.status,
@@ -263,6 +266,16 @@ defmodule Memcache do
                        extras: extras
                      }
                    ], acc}
+                else
+                  {[
+                     %Response{
+                       status: header.status,
+                       cas: header.cas,
+                       key: key,
+                       value: value,
+                       extras: extras
+                     }
+                   ], {worker, :halt}}
                 end
 
               {:response, {:error, reason}} ->
@@ -288,40 +301,46 @@ defmodule Memcache do
     end
   end
 
-  defp do_multi_request([request], worker) do
+  defp _multi_request([request], worker) do
     Worker.cast(worker, self(), request, request.opcode)
   end
 
-  defp do_multi_request([request | requests], worker) do
+  defp _multi_request([request | requests], worker) do
     Worker.cast(worker, self(), request, Opcode.to_quiet(request.opcode))
-    do_multi_request(requests, worker)
+    _multi_request(requests, worker)
   end
 
-  defp do_store(opcode, key, value, opts) do
-    request = store_request(opcode, key, value, opts)
-    [response] = multi_request([request], false)
+  defp _store(opcode, key, value, opts) do
+    request = _store_request(opcode, key, value, opts)
+    [response] = multi_request([request], false, opts)
 
-    response
+    response |> Map.put(:value, value)
   end
 
-  defp store_request(opcode, key, value, opts) do
+  defp _store_request(opcode, key, value, opts) do
     expires = Keyword.get(opts, :expires, 0)
     cas = Keyword.get(opts, :cas, 0)
+    transcoder = opts |> Keyword.get(:type, @default_type) |> _get_transcoder()
 
-    {value, flags} = Memcache.Transcoder.encode_value(value)
+    {value, flags} = transcoder.encode_value(value)
     extras = <<flags::size(32), expires::size(32)>>
 
     %Request{opcode: opcode, key: key, value: value, extras: extras, cas: cas}
   end
 
-  defp do_incr_decr(opcode, key, amount, opts) do
+  defp _get_transcoder(:json), do: Memcache.Transcoder.Json
+  defp _get_transcoder(:raw), do: Memcache.Transcoder.Raw
+  defp _get_transcoder(:erlang), do: Memcache.Transcoder.Erlang
+  defp _get_transcoder(_), do: Memcache.Transcoder
+
+  defp _incr_decr(opcode, key, amount, opts) do
     initial_value = Keyword.get(opts, :initial_value, 0)
     expires = Keyword.get(opts, :expires, 0)
 
     extras = <<amount::size(64), initial_value::size(64), expires::size(32)>>
 
     request = %Request{opcode: opcode, key: key, extras: extras}
-    [response] = multi_request([request], false)
+    [response] = multi_request([request], false, opts)
 
     if response.status == :ok do
       <<value::unsigned-integer-size(64)>> = response.value

@@ -13,22 +13,6 @@ defmodule Memcache.Transcoder do
   end
 end
 
-defmodule Memcache.Transcoder.Erlang do
-  @behaviour Memcache.Transcoder
-
-  @erlang_type_flag 0x0004
-
-  def encode_value(value) do
-    {:erlang.term_to_binary(value), @erlang_type_flag}
-  end
-
-  def decode_value(value, @erlang_type_flag) do
-    :erlang.binary_to_term(value)
-  end
-
-  def decode_value(_value, data_type), do: {:error, {:invalid_data_type, data_type}}
-end
-
 defmodule Memcache.Transcoder.Raw do
   @behaviour Memcache.Transcoder
 
@@ -40,8 +24,32 @@ defmodule Memcache.Transcoder.Raw do
 
   def encode_value(value), do: {:error, {:invalid_value, value}}
 
+  def decode_value(value) do
+    decode_value(value, @raw_type_flag)
+  end
+
   def decode_value(value, @raw_type_flag) do
     value
+  end
+
+  def decode_value(_value, data_type), do: {:error, {:invalid_data_type, data_type}}
+end
+
+defmodule Memcache.Transcoder.Erlang do
+  @behaviour Memcache.Transcoder
+
+  @erlang_type_flag 0x0004
+
+  def encode_value(value) do
+    {:erlang.term_to_binary(value), @erlang_type_flag}
+  end
+
+  def decode_value(value) do
+    decode_value(value, @erlang_type_flag)
+  end
+
+  def decode_value(value, @erlang_type_flag) do
+    :erlang.binary_to_term(value)
   end
 
   def decode_value(_value, data_type), do: {:error, {:invalid_data_type, data_type}}
@@ -62,6 +70,10 @@ defmodule Memcache.Transcoder.Json do
       error ->
         error
     end
+  end
+
+  def decode_value(value) do
+    decode_value(value, @json_type_flag)
   end
 
   def decode_value(value, @json_type_flag) do
