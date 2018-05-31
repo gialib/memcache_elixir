@@ -30,5 +30,6 @@ config :memcache,
   username: "",
   password: "",
   pool_size: 10,
-  pool_max_overflow: 20
+  pool_max_overflow: 20,
+  namespace: "default"
 

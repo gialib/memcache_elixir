@@ -18,6 +18,7 @@ defmodule Memcache do
   @default_timeout 5000
   @default_socket_opts [:binary, {:nodelay, true}, {:active, false}, {:packet, :raw}]
   @default_type :json
+  @default_namespace Application.get_env(:memcache, :namespace, "default")
 
   @type key :: binary
   @type value :: any
@@ -83,6 +84,7 @@ defmodule Memcache do
   """
   @spec get(key, opts) :: Response.t()
   def get(key, opts \\ []) do
+    key = _encode_key(key)
     request = %Request{opcode: :get, key: key}
     [response] = multi_request([request], false, opts)
 
@@ -110,6 +112,7 @@ defmodule Memcache do
   @spec mget(Enumerable.t(), opts) :: Stream.t()
   def mget(keys, opts \\ []) do
     keys
+    |> Enum.map(fn key -> _encode_key(key) end)
     |> Enum.map(&%Request{opcode: :getk, key: &1})
     |> multi_request(true, opts)
     |> Enum.map(fn response ->
@@ -174,6 +177,7 @@ defmodule Memcache do
   """
   @spec delete(key) :: Response.t()
   def delete(key) do
+    key = _encode_key(key)
     request = %Request{opcode: :delete, key: key}
     [response] = multi_request([request], false)
 
@@ -318,6 +322,7 @@ defmodule Memcache do
   end
 
   defp _store_request(opcode, key, value, opts) do
+    key = _encode_key(key)
     expires = Keyword.get(opts, :expires, 0)
     cas = Keyword.get(opts, :cas, 0)
     transcoder = opts |> Keyword.get(:type, @default_type) |> _get_transcoder()
@@ -334,6 +339,7 @@ defmodule Memcache do
   defp _get_transcoder(_), do: Memcache.Transcoder
 
   defp _incr_decr(opcode, key, amount, opts) do
+    key = _encode_key(key)
     initial_value = Keyword.get(opts, :initial_value, 0)
     expires = Keyword.get(opts, :expires, 0)
 
@@ -348,5 +354,9 @@ defmodule Memcache do
     else
       response
     end
+  end
+
+  defp _encode_key(key) do
+    "#{@default_namespace}@#{key}"
   end
 end
