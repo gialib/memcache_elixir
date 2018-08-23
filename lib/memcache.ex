@@ -131,18 +131,21 @@ defmodule Memcache do
 
     case response.status do
       :key_not_found ->
-        set(key, missing_fn.(), opts)
+        value = missing_fn.()
+        set(key, value, opts)
+
+      :ok ->
+        response
 
       _ ->
-        response
+        %Memcache.Response{response | value: missing_fn.()}
     end
   end
 
   def fetch!(key, missing_fn, opts \\ []) do
-    case fetch(key, missing_fn, opts) do
-      %Memcache.Response{status: :ok, value: value} -> value
-      _ -> nil
-    end
+    key
+    |> fetch(missing_fn, opts)
+    |> Map.get(:value)
   end
 
   @doc """
